@@ -1,0 +1,19 @@
+{
+  "model_architecture": "IoTThreatClassifier",
+  "input_dim": 125,
+  "hidden_dims": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.15,
+  "num_classes": 2,
+  "parameter_count": 10210,
+  "num_clients": 5,
+  "num_rounds": 10,
+  "local_epochs": 2,
+  "batch_size": 64,
+  "learning_rate": 0.001,
+  "random_seed": 42,
+  "partition_strategy": "scenario_grouped",
+  "model_file": "fedavg_model.pt"
+}

@@ -1,0 +1,116 @@
+services:
+  # ----------------------------------------------------------------------------
+  # Database Service: PostgreSQL 16 (Pinned version, hardened configuration)
+  # Addresses: Issue 1 (strong env password), Issue 2 (loopback port only),
+  #            Issue 5 (privileges), Issue 7 (pinned version)
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:16.4-alpine3.20
+    container_name: iot_soc_db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-iot_security}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - iot_net
+    # Security: Only bind to 127.0.0.1 (never 0.0.0.0) so external attackers cannot access DB
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-iot_security}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # Backend API Service: FastAPI + ML Detectors + Alembic
+  # Addresses: Issue 3 (loopback binding), Issue 5 (no new privileges),
+  #            Issue 8 (API_DEBUG false, strict CORS)
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iot_soc_api
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_DEBUG: ${API_DEBUG:-false}
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
+      DATABASE_POOL_TIMEOUT: ${DATABASE_POOL_TIMEOUT:-30.0}
+      DEFAULT_DETECTOR: ${DEFAULT_DETECTOR:-random_forest}
+      MODELS_DIR: /app/models
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-20b}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:80,http://localhost:5173}
+    ports:
+      # Bound to loopback to avoid exposing unauthenticated API directly to public WAN
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    networks:
+      - iot_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ----------------------------------------------------------------------------
+  # Frontend Service: React SOC Dashboard + Nginx
+  # Addresses: Issue 4 (single host port 80 only), Issue 5 (privileges)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-}"
+    container_name: iot_soc_frontend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # Single host port (eliminated redundant 5173:80 duplicate)
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - iot_net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+# ------------------------------------------------------------------------------
+# Persistent Storage Volumes & Networks
+# Note on Issue 10: Volume persistence keeps data across container restarts,
+# but for production recovery, offsite automated backups (pg_dump / Supabase PITR)
+# must be scheduled.
+# ------------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    name: iot_soc_postgres_data
+
+networks:
+  iot_net:
+    name: iot_soc_network
+    driver: bridge

@@ -1,0 +1,134 @@
+"""Google Gemini LLM explanation provider adapter using REST API via httpx."""
+
+import json
+import logging
+import os
+import time
+from typing import Optional, Dict, Any
+import httpx
+
+from src.explanations.providers.base import BaseExplanationProvider
+from src.explanations.prompt_builder import build_explanation_prompt
+from src.explanations.schemas import (
+    SeverityLevel,
+    ThreatExplanationResponse,
+    ThreatPredictionResponse,
+)
+
+logger = logging.getLogger("GeminiExplanationProvider")
+
+DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+
+
+class GeminiExplanationProvider(BaseExplanationProvider):
+    """
+    Asynchronous LLM explanation provider integrating with Google Gemini API.
+    Supports structured JSON response output with bounded timeouts.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout_seconds: float = 15.0,
+        max_tokens: int = 1024,
+    ):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+        self.model = model or os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL)
+        self.timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", timeout_seconds))
+        self.max_tokens = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", max_tokens))
+
+    @property
+    def provider_name(self) -> str:
+        return f"gemini:{self.model}"
+
+    def is_available(self) -> bool:
+        """Available if a non-empty API key is configured."""
+        return bool(self.api_key and self.api_key.strip() and not self.api_key.startswith("your_"))
+
+    async def generate_explanation(
+        self,
+        prediction: ThreatPredictionResponse,
+        operator_context: Optional[str] = None,
+    ) -> ThreatExplanationResponse:
+        """Call Gemini REST API, parse JSON, and return ThreatExplanationResponse."""
+        if not self.is_available():
+            raise RuntimeError("Gemini API key not configured. Cannot generate online explanation.")
+
+        system_prompt, user_prompt = build_explanation_prompt(
+            prediction_id=prediction.prediction_id,
+            predicted_class=prediction.predicted_class,
+            detector_name=prediction.detector_name,
+            malicious_probability=prediction.malicious_probability,
+            confidence_score=prediction.confidence_score,
+            validated_evidence=prediction.validated_evidence,
+            model_version=prediction.model_version,
+            operator_context=operator_context,
+        )
+
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key.strip()}"
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [{"text": full_prompt}]
+                }
+            ],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.1,
+                "maxOutputTokens": self.max_tokens,
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                resp = await client.post(endpoint, json=payload)
+
+            if resp.status_code == 429:
+                raise RuntimeError(f"Gemini API rate limit / quota exceeded (HTTP 429): {resp.text}")
+            elif resp.status_code != 200:
+                raise RuntimeError(f"Gemini API returned HTTP {resp.status_code}: {resp.text}")
+
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                raise ValueError(f"No response candidates returned by Gemini: {data}")
+
+            part = candidates[0].get("content", {}).get("parts", [{}])[0]
+            content_str = part.get("text", "")
+            parsed_json = json.loads(content_str)
+
+        except httpx.TimeoutException as e:
+            raise TimeoutError(f"Gemini API request timed out after {self.timeout_seconds}s: {e}") from e
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Gemini API returned non-JSON content: {e}") from e
+        except Exception as e:
+            logger.error(f"Gemini provider call failed: {e}")
+            raise
+
+        raw_sev = str(parsed_json.get("severity", "medium")).lower().strip()
+        try:
+            severity = SeverityLevel(raw_sev)
+        except ValueError:
+            severity = SeverityLevel.MEDIUM if prediction.predicted_class == "malicious" else SeverityLevel.INFORMATIONAL
+
+        return ThreatExplanationResponse(
+            prediction_id=prediction.prediction_id,
+            predicted_class=prediction.predicted_class,
+            detector_name=prediction.detector_name,
+            confidence_score=prediction.confidence_score,
+            severity=severity,
+            severity_rationale=str(parsed_json.get("severity_rationale", "Generated by Gemini LLM reasoning engine.")),
+            summary=str(parsed_json.get("summary", "Automated threat explanation generated from flow telemetry.")),
+            supporting_evidence=list(parsed_json.get("supporting_evidence", ["Flow telemetry analyzed by Gemini model."])),
+            uncertainties=list(parsed_json.get("uncertainties", ["Analysis based solely on header metadata."])),
+            recommended_actions=list(parsed_json.get("recommended_actions", ["Perform standard network log review."])),
+            requires_human_review=bool(parsed_json.get("requires_human_review", prediction.predicted_class == "malicious")),
+            explanation_provider=self.provider_name,
+            model_version=prediction.model_version,
+            generated_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            disclaimer="Advisory automated explanation grounded in flow telemetry. Not proof of compromise. Low-risk human triage required.",
+            is_fallback=False,
+        )

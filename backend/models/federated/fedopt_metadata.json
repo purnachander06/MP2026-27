@@ -1,0 +1,25 @@
+{
+  "model_architecture": "IoTThreatClassifier",
+  "input_dim": 125,
+  "hidden_dims": [
+    64,
+    32
+  ],
+  "dropout_rate": 0.15,
+  "num_classes": 2,
+  "parameter_count": 10210,
+  "num_clients": 5,
+  "num_rounds": 10,
+  "server_optimizer": "fedadam",
+  "server_learning_rate": 0.02,
+  "server_beta_1": 0.9,
+  "server_beta_2": 0.99,
+  "server_tau": 0.001,
+  "test_metrics": {
+    "accuracy": 0.8870833333333333,
+    "macro_f1": 0.8769412172942999,
+    "malicious_recall": 0.9978753541076487,
+    "malicious_precision": 0.840190816935003,
+    "roc_auc": 0.9027558750329736
+  }
+}

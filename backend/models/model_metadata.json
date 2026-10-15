@@ -1,0 +1,62 @@
+{
+  "model_name": "random_forest",
+  "model_class": "RandomForestClassifier",
+  "pipeline_file": "best_model_pipeline.joblib",
+  "random_seed": 42,
+  "selected_threshold": 0.6,
+  "ml_feature_columns": [
+    "id.orig_p",
+    "id.resp_p",
+    "proto",
+    "service",
+    "duration",
+    "orig_bytes",
+    "resp_bytes",
+    "conn_state",
+    "local_orig",
+    "local_resp",
+    "missed_bytes",
+    "history",
+    "orig_pkts",
+    "orig_ip_bytes",
+    "resp_pkts",
+    "resp_ip_bytes"
+  ],
+  "numeric_features": [
+    "id.orig_p",
+    "id.resp_p",
+    "duration",
+    "orig_bytes",
+    "resp_bytes",
+    "missed_bytes",
+    "orig_pkts",
+    "orig_ip_bytes",
+    "resp_pkts",
+    "resp_ip_bytes"
+  ],
+  "categorical_features": [
+    "proto",
+    "service",
+    "conn_state",
+    "local_orig",
+    "local_resp",
+    "history"
+  ],
+  "label_mapping": {
+    "benign": 0,
+    "malicious": 1
+  },
+  "inverse_label_mapping": {
+    "0": "benign",
+    "1": "malicious"
+  },
+  "training_samples": 33602,
+  "validation_samples": 9601,
+  "test_samples": 4800,
+  "library_versions": {
+    "scikit_learn": "1.7.2",
+    "pandas": "2.3.3",
+    "numpy": "2.2.6",
+    "joblib": "1.6.0"
+  }
+}

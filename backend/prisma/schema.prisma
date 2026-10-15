@@ -1,0 +1,81 @@
+﻿// Prisma schema for Supabase PostgreSQL database
+// Schema is designed in Third Normal Form (3NF)
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Detectors Entity (Normalized model definitions in 3NF)
+model Detector {
+  detector_id   String   @id @db.VarChar(64)
+  detector_name String   @db.VarChar(64)
+  detector_type String   @db.VarChar(32)
+  model_version String   @default("1.0.0") @db.VarChar(32)
+  description   String?  @db.Text
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("detectors")
+}
+
+// 2. Predictions Entity
+model Prediction {
+  id                      String        @id @default(uuid())
+  prediction_id           String        @unique @db.VarChar(64)
+  detector_name           String        @db.VarChar(64)
+  model_version           String        @default("1.0.0") @db.VarChar(32)
+  predicted_class         String        @db.VarChar(16)
+  prediction              Int
+  malicious_probability   Float
+  benign_probability      Float
+  threshold_used          Float
+  confidence_score        Float
+  is_calibrated           Boolean       @default(false)
+  validated_evidence      Json
+  stripped_leakage_fields Json
+  inference_time_ms       Float         @default(0.0)
+  created_at              DateTime      @default(now()) @db.Timestamptz(6)
+  explanations            Explanation[]
+
+  @@index([prediction_id])
+  @@index([created_at])
+  @@index([predicted_class, created_at])
+  @@index([detector_name, created_at])
+  @@map("predictions")
+}
+
+// 3. Explanations Entity (Child record in 3NF referencing prediction_id)
+model Explanation {
+  id                    String      @id @default(uuid())
+  prediction_id         String      @db.VarChar(64)
+  predicted_class       String      @db.VarChar(16)
+  detector_name         String      @db.VarChar(64)
+  confidence_score      Float?
+  severity              String      @db.VarChar(16)
+  severity_rationale    String      @db.Text
+  summary               String      @db.Text
+  supporting_evidence   Json
+  uncertainties         Json
+  recommended_actions   Json
+  requires_human_review Boolean     @default(false)
+  explanation_provider  String      @db.VarChar(64)
+  model_version         String      @default("1.0.0") @db.VarChar(32)
+  is_fallback           Boolean     @default(false)
+  disclaimer            String      @db.Text
+  operator_context      String?     @db.Text
+  generated_at          DateTime    @default(now()) @db.Timestamptz(6)
+  prediction            Prediction  @relation(fields: [prediction_id], references: [prediction_id], onDelete: Cascade)
+
+  @@index([prediction_id])
+  @@index([severity])
+  @@index([requires_human_review])
+  @@index([is_fallback])
+  @@index([generated_at])
+  @@index([severity, generated_at])
+  @@index([detector_name, generated_at])
+  @@map("explanations")
+}

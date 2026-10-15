@@ -1,0 +1,23 @@
+# Core dependencies for IoT-23 Federated Learning Project
+torch==2.14.1+cpu
+flwr==1.14.0
+scikit-learn==1.7.2
+pandas==2.3.3
+numpy==2.2.6
+matplotlib==3.10.9
+joblib==1.6.0
+rich==13.9.4
+protobuf==4.25.9
+grpcio==1.64.3
+cryptography==42.0.8
+
+# Phase 6 API and LLM service dependencies
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.8.0
+
+# Phase 7 PostgreSQL persistence and analytics dependencies
+sqlalchemy>=2.0.30
+asyncpg>=0.29.0
+alembic>=1.13.0
+aiosqlite>=0.20.0
