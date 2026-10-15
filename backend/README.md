@@ -5,7 +5,7 @@ This repository implements the end-to-end architecture for **“LLMs meet Federa
 
 ---
 
-## 🚀 Final Stage Documentation & Evaluation Artifacts
+## Final Stage Documentation & Evaluation Artifacts
 
 For major project review, evaluation panels, and viva voce defense, please refer directly to the dedicated **Final Stage Documentation Suite** located in [`docs/final_stage/`](docs/final_stage/):
 
